@@ -40,7 +40,7 @@ async function initMap() {
     marker.addListener("click", () => {
         // When the marker is clicked, center the map on the marker's position and reset zoom
         map.setCenter(marker.position);
-        map.setZoom(15);
+        map.setZoom(16);
     });
 }
 
