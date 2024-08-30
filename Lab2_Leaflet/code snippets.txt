@@ -1,0 +1,92 @@
+<link rel= "stylesheet" href= "https://unpkg.com/leaflet@1.6.0/dist/leaflet.css"/>
+<script src= "https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"></script >
+
+var map = L.map ('mapid'). setView ([59.324608,18.06736], 12);
+osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {	attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
+
+var marker=L.marker ([59.324608 , 18.06736]).addTo(map).bindPopup ("<b> Welcome to Stockholm !</b> <br />I am a popup.");
+
+var circle= L.circle ([59.346155 , 18.049538] , 500 , {
+	color: 'red ',
+	fillColor: '#f03 ',
+	fillOpacity: 0.5
+}).addTo(map).bindPopup ("I am a circle.");
+
+var polygon = L.polygon ([
+	[59.312686 , 18.016798] ,
+	[59.330388 , 18.023071] ,
+	[59.317601 , 18.041611]
+]).addTo(map).bindPopup ("I am a polygon.");
+
+<script src="https://code.jquery.com/jquery-3.4.1.min.js" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin= "anonymous"></script>
+
+
+function onEachFeature ( feature , layer ) {
+var popupContent = "<p>I started out as a GeoJSON " +
+feature.geometry.type + ", but now I'm a Leaflet vector !</p >";
+layer.bindPopup(popupContent);
+}
+
+var metroline;
+
+$.ajax ({
+type: 'GET',
+url: '/data.geojson',
+dataType: 'json',
+async:false ,
+success:function ( data ){
+metroline=L.geoJSON ( data ,
+{
+style: function ( feature )
+{
+return { color: "#438ddf"};
+}
+, onEachFeature:onEachFeature
+}). addTo (map);
+}
+});
+
+
+var popup = L.popup ();
+
+function onMapClick(e){
+	popup
+	.setLatLng(e.latlng)
+	.setContent(" You clicked the map at " + e.latlng.toString ())
+	.openOn(map);
+}
+map.on ('click', onMapClick );
+
+var info = L.control ({ position: 'bottomright'});
+
+info.onAdd = function (map ) {
+this._div = L.DomUtil.create ('div', 'info');
+this.update();
+return this._div;
+};
+
+info.update = function(props){
+// To be filled
+};
+
+info.addTo (map);
+
+function highlightFeature(e){
+// To be filled
+}
+
+function resetHighlight(e) {
+// To be filled
+}
+
+
+
+function onEachFeature ( feature , layer ) {
+// Previous content
+...
+// New event listeners added.
+layer.on ({
+mouseover: highlightFeature ,
+mouseout: resetHighlight ,
+});
+}
