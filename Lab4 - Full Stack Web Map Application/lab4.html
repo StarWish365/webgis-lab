@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+	<title>Quick Start - Leaflet</title>
+
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css" />
+	<script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"> </script>
+	<!--
+	<script src="https://code.jquery.com/jquery-3.4.1.min.js"
+		integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
+	-->
+	<script src="https://code.jquery.com/jquery-3.7.1.js"
+		integrity="sha256-eKhayi8LEQwp4NKxN+CfCh+3qOVUtJn3QNZ0TciWLP4=" crossorigin="anonymous"></script>
+
+</head>
+
+<body>
+
+	<div id="mapid" style="width: 600px; height: 600px;"></div>
+	<script>
+
+		var map = L.map('mapid').setView([59.324608, 18.06736], 11);
+		osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
+
+		var my_markers;
+		function onEachFeature(feature, layer) {
+			var popupContent = "<p>Marker Name:" + feature.properties.name + "<!p>";
+			layer.bindPopup(popupContent).openPopup();
+		}
+		function load_markers() {
+			if (my_markers) {
+				map.removeLayer(my_markers)
+			}
+			$.ajax({
+				type: 'GET',
+				url: '/api/get_markers_geojson',
+				async: false,
+				success: function (data) {
+					console.log(data[0]["row_to_json"]);
+					my_markers = L.geoJSON(data[0]["row_to_json"],
+						{
+							onEachFeature: onEachFeature
+						})
+				}
+			});
+			if (my_markers) {
+				my_markers.addTo(map);
+			}
+		}
+		load_markers();
+
+
+		//popup function
+		function open_popup(e) {
+			var popupLocation = new L.LatLng(e.latlng.lat,
+				e.latlng.lng);
+			var popupContent =
+				"<div id= 'report'> " +
+				"<h1 class= 'report-title'> " + "Data Form" + "</h1>" +
+				"<p id= 'report-field-lat'> " +
+				"<span class= 'report-field-label'> Lat: </span> " +
+				"<span class= 'report-field-value'> " + e.latlng.lat + "</span > " +
+				"</p>" +
+				" <p id= 'report-field-lon'> " +
+				" <span class= 'report-field-label'> Lng: </span> " +
+				" <span class= 'report-field-value'> " + e.latlng.lng + "</span>" +
+				" </p > " +
+				" <p id= 'report-field-3'> " +
+				" <span class= 'report-field-label'> Name: </span> " +
+				" <input id= 'marker_name'> " +
+				" </p>" +
+				" <div class= 'report-btns'> " +
+				" <button id= 'save-button'> save </button> " +
+				"</div >" +
+				"</div >";
+			var popup = new L.Popup();
+			popup.setLatLng(popupLocation);
+			popup.setContent(popupContent);
+			popup.openOn(map);
+			//map.setView(popupLocation)
+			//map.setZoom(5)
+		}
+		map.addEventListener('dblclick', open_popup);
+
+		//save function
+
+		$(document).on('click', '#save-button', function (e) {
+			// PREPARE FORM DATA
+			var loc_data =
+			{
+				name: document.getElementById("marker_name").value,
+				lat: $(document).find('#report-field-lat .report-field-value').text(),
+				lon: $(document).find('#report-field-lon .report-field-value').text()
+			}
+			// DO POST
+			$.ajax(
+				{
+					type: "POST",
+					contentType: "application/json",
+					url: "/save_marker",
+					data: JSON.stringify(loc_data),
+					success: function (marker) {
+						map.closePopup();
+						load_markers();
+					},
+					error: function (e) {
+						alert("Error!");
+						console.log("ERROR:", e);
+					}
+				});
+		}
+		);
+
+		//reture a line geometry
+		map.addEventListener('click', Identify);
+		function Identify(e) {
+			$.ajax({
+				type: 'GET',
+				url: '/api/get_closest_marker?lon=' + e.latlng.lng + '&lat=' + e.latlng.lat,
+				async: false,
+				success: function (data) {
+					line = L.geoJSON(data[0].row_to_json);
+					line.addTo(map);
+				}
+			});
+		}
+
+		//create a buffer
+		map.addEventListener('click', Buffer);
+		function Buffer(e) {
+			$.ajax({
+				type: 'GET',
+				url: '/api/get_buffer?lon=' + e.latlng.lng + '&lat=' + e.latlng.lat,
+				async: false,
+				success: function (data) {
+					const buffer = L.geoJSON(data[0].row_to_json);
+					style: {
+						color: 'blue'
+						weight: 2
+					}
+					buffer.addTo(map);
+				},
+				error: function (e) {
+					console.log("Error:", e);
+				}
+			});
+		}
+
+	</script>
+
+
+
+</body>
+
+</html>

@@ -1,0 +1,275 @@
+npm install express pg
+
+-----------------------------------------------------------------------------------------------
+
+DROP TABLE IF EXISTS tbl_markers;
+CREATE TABLE tbl_markers (id serial primary key , name varchar (20)
+);
+-- Add a spatial column to the table
+SELECT AddGeometryColumn ('public','tbl_markers','geom',4326,'POINT',2);
+DELETE FROM tbl_markers;
+
+INSERT INTO tbl_markers (name , geom )
+WITH tbl_random_geom as
+(
+SELECT (st_dumppoints(ST_GeneratePoints (geom , 20))).geom
+FROM (
+SELECT ST_Buffer(
+ST_GeomFromText ('POINT(18.061527 59.312578)' ,4326) ,0.2, 'endcap=round join=round'
+) AS geom
+) AS s
+) SELECT ('rp'|| row_number () over ()):: varchar as name , geom FROM tbl_random_geom;
+
+-----------------------------------------------------------------------------------------------
+
+select * from tbl_markers;
+
+-----------------------------------------------------------------------------------------------
+
+app.get('/api/get_markers/', (req, res) =>
+{
+    pool.query("select * from tbl_markers;", (err, dbResponse) =>
+        {
+            if (err) console.log(err); //console.log(dbResponse.rows); // here dbResponse is available, your data processing logic goes here
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.send(dbResponse.rows);
+        }
+    );
+});
+
+-----------------------------------------------------------------------------------------------
+
+
+
+SELECT row_to_json (fc) FROM
+(
+SELECT 'FeatureCollection' As type , array_to_json ( array_agg (f))
+As features FROM
+(
+SELECT 'Feature' As type , ST_AsGeoJSON ( lg.geom ):: json As
+geometry
+, row_to_json (( SELECT l FROM ( SELECT id , name ) As l)) As
+properties
+FROM tbl_markers As lg
+) As f
+) As fc;
+
+
+-----------------------------------------------------------------------------------------------
+
+	var my_markers;
+
+	function onEachFeature ( feature , layer )
+	{
+		var popupContent = "Marker Name: " + feature.properties.name;
+		layer.bindPopup(popupContent);
+	}
+	function load_markers ()
+	{
+		if( my_markers )
+		{
+			map.removeLayer(my_markers)
+		}
+		$.ajax ({
+			type: 'GET',
+			url: '/api/get_markers_geojson',
+			async:false ,
+			success:function ( data )
+			{
+				my_markers=L.geoJSON(data[0].row_to_json,
+						{
+							onEachFeature:onEachFeature
+						});
+			}
+
+		});
+		if(my_markers)
+		{
+			my_markers.addTo(map);
+		}
+	}
+	load_markers();
+
+
+
+-----------------------------------------------------------------------------------------------
+
+
+map.addEventListener('dblclick', open_popup );
+
+
+
+-----------------------------------------------------------------------------------------------
+
+	function open_popup(e) {
+		var popupLocation = new L.LatLng (e.latlng.lat ,e.latlng.lng );
+		var popupContent =
+				" <div id='report'>" +
+				"<h1 class= ' report-title '>" + " Data Form " + " </h1>" +
+				"<p id= ' report-field-lat '>" +
+				"<span class= ' report-field-label '> Lat: </span>" +
+				"<span class= ' report-field-value '>" + e.latlng.lat + "</span>" +
+		"</p>" +
+		"<p id= 'report-field-lon'>" +
+		" <span class= 'report-field-label'> Lng: </ span >" +
+		" <span class= 'report-field-value'>" + e.latlng.lng + "</span>" +
+		"</p>" +
+		"<p id= 'report-field-3'>" +
+		"<span class= 'report-field-label'> Name: </span>" +
+		"<input id= 'marker_name'>" +
+		"</p>" +
+		" <div class= 'report-btns'>" +
+		" <button id= 'save-button'>save</button>" +
+		" </div>" +
+		" </div>";
+		popup = new L.Popup();
+		popup.setLatLng(popupLocation);
+		popup.setContent(popupContent);
+		popup.openOn(map);
+			}
+
+-----------------------------------------------------------------------------------------------
+
+	$( document ).on('click', '#save-button',function (e)
+	{
+
+		// PREPARE FORM DATA
+		var loc_data =
+				{
+					name:document.getElementById ("marker_name").value,
+					lat:$(document).find('#report-field-lat .report-field-value').text(),
+					lon:$(document).find('#report-field-lon .report-field-value').text()
+				}
+// DO POST
+		$.ajax (
+				{
+					type : "POST",
+					contentType :"application/json",
+					url : "/save_marker",
+					data : JSON.stringify(loc_data),
+					success: function (marker)
+					{
+						map.closePopup();
+						load_markers();
+					},
+					error : function (e) {
+						alert ("Error!");
+						console.log ("ERROR:",e);
+					}
+				});
+	});
+
+-----------------------------------------------------------------------------------------------
+
+app.post ('/save_marker', (req , res) =>
+    {
+        console.log ('Data recieved:' + JSON.stringify (req.body)
+        );
+        var q="insert into tbl_markers(name,geom) values ("+"'"+
+            req.body.name +"',ST_GeomFromText('POINT("+req.body.lon +
+            " "+ req.body.lat +")',4326));";
+        pool.query(q,(err,dbResponse) =>
+            {
+                if(err)console.log(err);
+                res.send(dbResponse.rows);
+            }
+        );
+    }
+);
+
+-----------------------------------------------------------------------------------------------
+
+	map.addEventListener('click',Identify);
+
+	function Identify (e)
+	{
+		$.ajax ({
+			type: 'GET',
+			url: '/api/get_closest_marker?lon='+ e.latlng.lng +'&lat='+ e.latlng.lat ,async:false ,
+			success:function ( data ){
+				line=L.geoJSON(data[0].row_to_json);
+				line.addTo(map);
+			}
+		});
+	}
+
+
+-----------------------------------------------------------------------------------------------
+
+app.get ('/api/get_closest_marker', (req , res) => {
+    console.log ('Request received on the server to send closest marker');
+    var lat=req.query.lat;
+    var lon=req.query.lon;
+    var q='with tbl_line_to_closest_point as\n' +
+        '(\n' +
+        '\twith query_point as\n' +
+        '\t(\n' +
+        '\t\tselect (ST_GeomFromText(\'POINT('+lon+' '+lat+')\',4326)) as geom\n' +
+        '\t)\n' +
+        '\tselect \tid,name,\n' +
+        '\t\tst_distance(st_transform(m.geom,32633),st_transform((qp.geom),32633)) as distance,\n' +
+        '\t\tST_MakeLine(m.geom,qp.geom) as line_geom\n' +
+        '\tfrom \n' +
+        '\ttbl_markers m ,query_point qp\n' +
+        '\torder by st_distance(st_transform(m.geom,32633),st_transform(qp.geom,32633)) limit 1\n' +
+        ') select row_to_json(fc)FROM ( \n' +
+        '\tSELECT \'FeatureCollection\' As type, array_to_json(array_agg(f)) As features FROM (\n' +
+        '\t\tSELECT \'Feature\' As type\n' +
+        '                    , ST_AsGeoJSON(lg.line_geom)::json As geometry\n' +
+        '                    , row_to_json((SELECT l FROM (SELECT id,name,distance) As l)) As properties\n' +
+        '                   FROM tbl_line_to_closest_point As lg   ) As f )  As fc;\n';
+    console.log(q);
+
+    pool.query(q, (err,dbResponse) =>
+        {
+            if (err) console.log(err);
+            res.send(dbResponse.rows);
+        }
+    );
+});
+
+
+
+-----------------------------------------------------------------------------------------------
+
+
+with tbl_buffer_to_closest_point as
+(
+with query_point as
+(
+select ( ST_GeomFromText ('POINT(18.18580985047447 59.22831035358497)' ,4326)) as geom
+)
+select id ,name ,
+st_distance ( st_transform (m.geom ,32633) , st_transform (( qp.geom )
+,32633) ) as distance ,
+ST_buffer (m.geom ,0.005) as buffer_geom
+from tbl_markers m ,query_point qp
+order by st_distance ( st_transform (m.geom ,32633) , st_transform (
+qp.geom ,32633) ) limit 1
+)
+select row_to_json (fc) FROM
+(
+SELECT 'FeatureCollection' As type , array_to_json ( array_agg (f))
+As features
+FROM
+(
+SELECT 'Feature' As type
+, ST_AsGeoJSON ( lg.buffer_geom ):: json As geometry
+, row_to_json (( SELECT l FROM ( SELECT id ,name , distance ) As l))
+As properties
+FROM tbl_buffer_to_closest_point As lg
+) As f
+)
+As fc;
+
+-----------------------------------------------------------------------------------------------
+
+<script src= "https://cdn.jsdelivr.net/npm/@turf/turf@5/turf.min.js"></script>
+
+-----------------------------------------------------------------------------------------------
+
+	var buffer = turf.buffer(my_markers.toGeoJSON(),150, { units:
+				'meters'});
+	L.geoJSON(buffer).addTo (map);
+
+-----------------------------------------------------------------------------------------------
